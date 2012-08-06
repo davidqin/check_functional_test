@@ -1,28 +1,14 @@
-# rails runner script/check_functional_test.rb
-
 require "ansi/code"
+require "rails"
 
-$LOAD_PATH << File.expand_path('../../test', __FILE__)
-
-IGNORE_ACTIONS =  []
-
-class String
-  def have?(content)
-    length = self.scan(content).length
-    if length == 0
-      return false
-    else
-      return true
-    end
-  end
-end
+IGNORE_ACTIONS = []
 
 class Array
   def include_expected_test?(expected_test)
     prefix = expected_test
 
     self.each do |item|
-      if item.have?(prefix)
+      if item.match(prefix)
         return true
       end
     end
@@ -32,18 +18,22 @@ class Array
 end
 
 module CheckFunctionalTest
-  class CheckFunctionalTest
+  class Check
+
+    attr_reader   :rails_path
     attr_accessor :actions_count
     attr_accessor :expected_tests_count
-    attr_accessor :missing_test_files_count
+    attr_accessor :missing_test_files
     attr_accessor :missing_action_tests_count
     attr_accessor :strat_chekc_time
 
     def initialize
+      @rails_path = "#{Rails.root.to_path}"
+
       self.actions_count              = 0
       self.expected_tests_count       = 0
-      self.missing_test_files_count   = 0
       self.missing_action_tests_count = 0
+      self.missing_test_files         = {}
       self.strat_chekc_time           = Time.now
     end
 
@@ -54,12 +44,13 @@ module CheckFunctionalTest
       end
 
       report_result filenames.size
+      #generate_missing_test_files unless missing_test_files.empty?
     end
 
     private
 
     def get_controller_filenames
-      contorller_root_folder      = 'app/controllers'
+      contorller_root_folder      = "#{rails_path}/app/controllers"
       ignore_controller_filenames = ['application_controller']
       absolute_filenames          = Dir["#{contorller_root_folder}/**/*.rb"]
 
@@ -85,15 +76,24 @@ module CheckFunctionalTest
     end
 
     def check_functional_test_file(controller_filename)
-      test_file = "functional/#{controller_filename}_test.rb"
+      test_file = "#{rails_path}/test/functional/#{controller_filename}_test.rb"
       begin
         require test_file
       rescue LoadError
         report_puts "Can not find the test file: -> #{test_file}"
-        self.missing_test_files_count += 1
+        record_missing_test_files(controller_filename, test_file)
         return false
       end
       return true
+    end
+
+    def record_missing_test_files(controller_filename, test_file)
+      controller_class = get_controller_class(controller_filename)
+      action_list      = get_class_actions(controller_class)
+      self.missing_test_files[controller_filename] = []
+      action_list.each do |action_name|
+        self.missing_test_files[controller_filename] << action_name
+      end
     end
 
     def get_controller_class(controller_filename)
@@ -113,8 +113,8 @@ module CheckFunctionalTest
 
     def remove_ignore_actions(actions, a_class)
       actions.delete_if do |action_name|
-        condition_one   = action_name.to_s.have?(/_one_time/)
-        condition_two   = action_name.to_s.have?(/_callback_before_/)
+        condition_one   = action_name.to_s.match(/_one_time/)
+        condition_two   = action_name.to_s.match(/_callback_before_/)
         condition_three = IGNORE_ACTIONS.include?([a_class.name.underscore, action_name.to_s])
         condition_one || condition_two || condition_three
       end
@@ -135,7 +135,7 @@ module CheckFunctionalTest
     def action_need_test_failed_case(controller_action)
       prefixs = %w(create update)
       prefixs.each do |prefix|
-        if controller_action.have?(prefix)
+        if controller_action.match(prefix)
           return true
         end
       end
@@ -154,8 +154,54 @@ module CheckFunctionalTest
     def report_result(controllers_count)
       report_puts_separator
       report_puts "Controller: #{controllers_count}   Action: #{self.actions_count}   Expected test: #{self.expected_tests_count}"
-      report_puts "Missing test file: #{self.missing_test_files_count}   Missing action test: #{self.missing_action_tests_count}    In %0.9f seconds" % [Time.now - self.strat_chekc_time]
+      report_puts "Missing test file: #{self.missing_test_files.count}   Missing action test: #{self.missing_action_tests_count}    In %0.9f seconds" % [Time.now - self.strat_chekc_time]
       report_puts_separator
+    end
+
+    def generate_missing_test_files
+      print "Generate the missing test_files?(Y/n):"
+      command = gets.chomp
+      path = "#{rails_path}/test"
+
+      if(command == 'Y' or command == 'y')
+        self.missing_test_files.each do |controller_filename, action_list|
+          test_file_name = "#{path}/functional/#{controller_filename}_test.rb"
+          FileUtils.mkdir_p test_file_name.split(/\//)[0..-2].join("/")
+          File.open(test_file_name, "w") { |f| f.write(functional_test_file_template(controller_filename,action_list))}
+          report_print "Generate file: ", :green
+          puts test_file_name
+        end
+        recheck
+      end
+    end
+
+    def recheck
+      reset_attributes
+      check
+    end
+
+    def functional_test_file_template(controller_filename, action_list)
+      action_template = ""
+      action_list.each do |action|
+        action_template += <<-ACTION
+        test "#{action}" do
+          assert true
+        end
+
+        ACTION
+      end
+      class_template = <<-CLS
+      require 'test_helper'
+
+      class #{controller_filename.camelize}Test < ActionController::TestCase
+
+        setup do
+        end
+
+        #{action_template}
+      end
+      CLS
+      class_template
     end
 
     def report_print(string, effect = nil)
@@ -176,7 +222,7 @@ module CheckFunctionalTest
 
     def report_puts_separator
       color = :green
-      color = :red if self.missing_test_files_count != 0 || self.missing_action_tests_count != 0
+      color = :red if self.missing_test_files.count != 0 || self.missing_action_tests_count != 0
       separator = "=" * 78
       report_puts separator, color
     end
@@ -191,4 +237,3 @@ module Test
     end
   end
 end
-
