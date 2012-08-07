@@ -1,11 +1,14 @@
-require 'check_functional_test/helper'
+require 'check_functional_test/output_helper'
 
 module CheckFunctionalTest
   class Repair
-    include Helper
+    include OutputHelper
+
+    attr_reader :need_failed_case
 
     def initialize(check)
       generate_missing_test_files(check)
+      @need_failed_case = check.need_failed_case
     end
 
     def generate_missing_test_files(check)
@@ -23,15 +26,11 @@ module CheckFunctionalTest
     end
 
     def functional_test_file_template(controller_filename, action_list)
-      action_template = ""
+      actions_template = ""
       action_list.each do |action|
-        action_template += <<-ACTION
-
-  test "#{action}" do
-    assert true
-  end
-ACTION
+        actions_template += one_action_tempalte(action)
       end
+      
       class_template = <<-CLS
 require 'test_helper'
 
@@ -39,11 +38,20 @@ class #{controller_filename.camelize}Test < ActionController::TestCase
 
   setup do
   end
-#{action_template}
+#{actions_template}
 end
 CLS
       class_template
     end
+
+  def one_action_tempalte(action_name)
+<<-ACTION
+
+  test "#{action_name}" do
+    assert true
+  end
+ACTION
+  end
 
   end
 end

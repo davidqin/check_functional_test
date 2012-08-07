@@ -1,5 +1,5 @@
 require "rails"
-require 'check_functional_test/helper'
+require 'check_functional_test/report'
 require 'test/unit'
 
 IGNORE_ACTIONS = []
@@ -20,9 +20,11 @@ end
 
 module CheckFunctionalTest
   class Check
-    include Helper
+    include Report
 
     attr_reader   :rails_path
+    attr_reader   :need_failed_case
+
     attr_accessor :controllers_count
     attr_accessor :actions_count
     attr_accessor :expected_tests_count
@@ -31,7 +33,9 @@ module CheckFunctionalTest
     attr_accessor :missing_action_tests_count
     attr_accessor :strat_chekc_time
 
-    def initialize
+
+    def initialize(need_failed_case = true)
+      @need_failed_case = need_failed_case
       @rails_path = "#{Rails.root.to_path}"
       $LOAD_PATH << "#{rails_path}/test"
 
@@ -103,8 +107,18 @@ module CheckFunctionalTest
       controller_class = get_controller_class(controller_filename)
       action_list      = get_class_actions(controller_class)
       self.missing_test_files[controller_filename] = []
+
       action_list.each do |action_name|
         self.missing_test_files[controller_filename] << action_name
+        self.actions_count              += 1
+        self.expected_tests_count       += 1
+        self.missing_action_tests_count += 1
+
+        if action_need_test_failed_case(action_name)
+          self.expected_tests_count       += 1      
+          self.missing_action_tests_count += 1
+          self.missing_test_files[controller_filename] << action_name + "_failed"
+        end
       end
     end
 
@@ -134,9 +148,26 @@ module CheckFunctionalTest
 
     def check_controller_actions(action_list, test_list, controller_filename)
       action_list.each do |action|
+        if action_need_test_failed_case(action)
+          check_controller_action_test("#{action}_failed", test_list, controller_filename)
+          self.expected_tests_count += 1
+        end
+
         check_controller_action_test(action, test_list, controller_filename)
         self.expected_tests_count += 1
       end
+    end
+
+    def action_need_test_failed_case(controller_action)
+      return false unless self.need_failed_case
+
+      prefixs = %w(create update)
+      prefixs.each do |prefix|
+        if controller_action.match(prefix)
+          return true
+        end
+      end
+      return false
     end
 
     def check_controller_action_test(expected_test, actual_test_list, controller_filename)
@@ -144,41 +175,6 @@ module CheckFunctionalTest
       self.missing_test_action[controller_filename] ||= []
       self.missing_test_action[controller_filename] << expected_test
       self.missing_action_tests_count += 1
-    end
-
-    def report_result
-      missing_test_files.each do |test_file, actions|
-        report_puts "Can not find the test file: -> test/functional/#{test_file}_test.rb"
-      end
-
-      missing_test_action.each do |controller_filename, expected_tests|
-        report_print "#{controller_filename}".camelize, :bold
-        puts  "  in test/functional/#{controller_filename}_test.rb."
-        expected_tests.each do |expected_test|
-          report_print "    Missing: ", :red
-          report_puts "#{expected_test} action test!"
-        end
-      end
-
-      report_puts_separator
-      report_puts "Controller: #{controllers_count}   Action: #{self.actions_count}   Expected test: #{self.expected_tests_count}"
-      report_puts "Missing test file: #{self.missing_test_files.count}   Missing action test: #{self.missing_action_tests_count}    In %0.9f seconds" % [Time.now - self.strat_chekc_time]
-      report_puts_separator
-
-      if self.missing_test_files.count != 0
-        report_puts "You can execute \"rake func:test:repair\" to generate missing test files!", :green
-      end
-    end
-
-    def test_missing?
-      self.missing_test_files.count != 0 || self.missing_action_tests_count != 0
-    end
-
-    def report_puts_separator
-      color = :green
-      color = :red if test_missing?
-      separator = "=" * 78
-      report_puts separator, color
     end
   end
 end

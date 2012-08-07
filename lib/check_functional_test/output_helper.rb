@@ -1,7 +1,7 @@
 require "ansi/code"
 
 module CheckFunctionalTest
-  module Helper
+  module OutputHelper
     def report_print(string, effect = nil)
       if effect
         print ANSI.send(effect,string)
