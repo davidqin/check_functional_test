@@ -1,5 +1,6 @@
-require "ansi/code"
 require "rails"
+require 'check_functional_test/helper'
+require 'test/unit'
 
 IGNORE_ACTIONS = []
 
@@ -19,8 +20,10 @@ end
 
 module CheckFunctionalTest
   class Check
+    include Helper
 
     attr_reader   :rails_path
+    attr_accessor :controllers_count
     attr_accessor :actions_count
     attr_accessor :expected_tests_count
     attr_accessor :missing_test_files
@@ -29,12 +32,21 @@ module CheckFunctionalTest
 
     def initialize
       @rails_path = "#{Rails.root.to_path}"
+      $LOAD_PATH << "#{rails_path}/test"
 
+      self.controllers_count          = 0
       self.actions_count              = 0
       self.expected_tests_count       = 0
       self.missing_action_tests_count = 0
       self.missing_test_files         = {}
       self.strat_chekc_time           = Time.now
+
+      Test::Unit::Runner.class_variable_set "@@stop_auto_run", true
+    end
+
+    def check_and_report
+      check
+      report_result
     end
 
     def check
@@ -42,9 +54,8 @@ module CheckFunctionalTest
       filenames.each do |controller_filename|
         check_controller(controller_filename)
       end
-
-      report_result filenames.size
-      #generate_missing_test_files unless missing_test_files.empty?
+      self.controllers_count = filenames.size
+      self
     end
 
     private
@@ -80,7 +91,6 @@ module CheckFunctionalTest
       begin
         require test_file
       rescue LoadError
-        report_puts "Can not find the test file: -> #{test_file}"
         record_missing_test_files(controller_filename, test_file)
         return false
       end
@@ -151,73 +161,15 @@ module CheckFunctionalTest
       self.missing_action_tests_count += 1
     end
 
-    def report_result(controllers_count)
+    def report_result
+      missing_test_files.each do |test_file|
+        report_puts "Can not find the test file: -> #{test_file}"
+      end
+
       report_puts_separator
       report_puts "Controller: #{controllers_count}   Action: #{self.actions_count}   Expected test: #{self.expected_tests_count}"
       report_puts "Missing test file: #{self.missing_test_files.count}   Missing action test: #{self.missing_action_tests_count}    In %0.9f seconds" % [Time.now - self.strat_chekc_time]
       report_puts_separator
-    end
-
-    def generate_missing_test_files
-      print "Generate the missing test_files?(Y/n):"
-      command = gets.chomp
-      path = "#{rails_path}/test"
-
-      if(command == 'Y' or command == 'y')
-        self.missing_test_files.each do |controller_filename, action_list|
-          test_file_name = "#{path}/functional/#{controller_filename}_test.rb"
-          FileUtils.mkdir_p test_file_name.split(/\//)[0..-2].join("/")
-          File.open(test_file_name, "w") { |f| f.write(functional_test_file_template(controller_filename,action_list))}
-          report_print "Generate file: ", :green
-          puts test_file_name
-        end
-        recheck
-      end
-    end
-
-    def recheck
-      reset_attributes
-      check
-    end
-
-    def functional_test_file_template(controller_filename, action_list)
-      action_template = ""
-      action_list.each do |action|
-        action_template += <<-ACTION
-        test "#{action}" do
-          assert true
-        end
-
-        ACTION
-      end
-      class_template = <<-CLS
-      require 'test_helper'
-
-      class #{controller_filename.camelize}Test < ActionController::TestCase
-
-        setup do
-        end
-
-        #{action_template}
-      end
-      CLS
-      class_template
-    end
-
-    def report_print(string, effect = nil)
-      if effect
-        print ANSI.send(effect,string)
-      else
-        print string
-      end
-    end
-
-    def report_puts(string, effect = nil)
-      if effect
-        puts ANSI.send(effect,string)
-      else
-        puts string
-      end
     end
 
     def report_puts_separator
@@ -225,15 +177,6 @@ module CheckFunctionalTest
       color = :red if self.missing_test_files.count != 0 || self.missing_action_tests_count != 0
       separator = "=" * 78
       report_puts separator, color
-    end
-
-  end
-end
-
-module Test
-  module Unit
-    class Runner
-      @@stop_auto_run = true
     end
   end
 end
