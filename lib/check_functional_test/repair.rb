@@ -1,7 +1,7 @@
 require 'check_functional_test/helper'
 
 module CheckFunctionalTest
-  class Repire
+  class Repair
     include Helper
 
     def initialize(check)
@@ -26,23 +26,22 @@ module CheckFunctionalTest
       action_template = ""
       action_list.each do |action|
         action_template += <<-ACTION
-        test "#{action}" do
-          assert true
-        end
 
-        ACTION
+  test "#{action}" do
+    assert true
+  end
+ACTION
       end
       class_template = <<-CLS
-      require 'test_helper'
+require 'test_helper'
 
-      class #{controller_filename.camelize}Test < ActionController::TestCase
+class #{controller_filename.camelize}Test < ActionController::TestCase
 
-        setup do
-        end
-
-        #{action_template}
-      end
-      CLS
+  setup do
+  end
+#{action_template}
+end
+CLS
       class_template
     end
 

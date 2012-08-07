@@ -7,8 +7,8 @@ namespace :func do
     end
 
     desc 'generate your missing functional test controllers and actions'
-    task :repire => :environment do
-      CheckFunctionalTest::Repire.new(CheckFunctionalTest::Check.new.check)
+    task :repair => :environment do
+      CheckFunctionalTest::Repair.new(CheckFunctionalTest::Check.new.check)
     end
   end
 end
