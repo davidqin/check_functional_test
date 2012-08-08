@@ -37,6 +37,7 @@ module CheckFunctionalTest
     def initialize(need_failed_case = true)
       @need_failed_case = need_failed_case
       @rails_path = "#{Rails.root.to_path}"
+
       $LOAD_PATH << "#{rails_path}/test"
 
       self.controllers_count          = 0
@@ -115,7 +116,7 @@ module CheckFunctionalTest
         self.missing_action_tests_count += 1
 
         if action_need_test_failed_case(action_name)
-          self.expected_tests_count       += 1      
+          self.expected_tests_count       += 1
           self.missing_action_tests_count += 1
           self.missing_test_files[controller_filename] << action_name + "_failed"
         end
